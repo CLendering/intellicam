@@ -3,6 +3,7 @@ import datetime
 import numpy as np
 import imutils
 import cv2
+import os
 import time
 from math import ceil
 from scipy.spatial.distance import euclidean
@@ -15,41 +16,18 @@ from deep_sort import nn_matching
 from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 from deep_sort import generate_detections as gdet
-import requests
-import cv2
-import numpy as np
 IS_CAM = VIDEO_CONFIG["IS_CAM"]
 HIGH_CAM = VIDEO_CONFIG["HIGH_CAM"]
 
-'''def _record_movement_data(movement_data_writer, movement):
+def _record_movement_data(movement_data_writer, movement):
 	track_id = movement.track_id 
 	entry_time = movement.entry 
 	exit_time = movement.exit			
 	positions = movement.positions
-	# write in a txt file the positions object to see whats isnsight 
- 	# since python 3.6 does not support debugging
 	positions = np.array(positions).flatten()
 	positions = list(positions)
-	data = [track_id] + [entry_time] + [exit_time] + positions
-	movement_data_writer.writerow(data)'''
-def _record_movement_data(movement_data_writer, movement):
-    track_id = movement.track_id 
-    entry_time = movement.entry 
-    exit_time = movement.exit			
-    positions = movement.positions
-
-    # Write the positions object to a text file for inspection
-    with open('positions_debug.txt', 'a') as f:
-        f.write(f"Track ID: {track_id} - Entry: {entry_time} - Exit: {exit_time}\n")
-        f.write(f"Positions: {positions}\n\n")
-
-    # Flatten positions using numpy and convert to list
-    positions = np.array(positions).flatten()
-    positions = list(positions)
-
-    # Prepare the data for CSV writing
-    data = [track_id, entry_time, exit_time] + positions
-    movement_data_writer.writerow(data)
+	data = [track_id] + [entry_time] + [exit_time] + [positions]
+	movement_data_writer.writerow(data)
 
 def _record_crowd_data(time, human_count, violate_count, restricted_entry, abnormal_activity, crowd_data_writer):
 	data = [time, human_count, violate_count, int(restricted_entry), int(abnormal_activity)]
@@ -63,6 +41,8 @@ def _end_video(tracker, frame_count, movement_data_writer):
 		
 
 def video_process(cap, frame_size, net, ln, encoder, tracker, movement_data_writer, crowd_data_writer):
+	fourcc = cv2.VideoWriter_fourcc(*'XVID')
+	out = cv2.VideoWriter('output_video.avi', fourcc, 30.0, (frame_size,frame_size))
 	def _calculate_FPS():
 		t1 = time.time() - t0
 		VID_FPS = frame_count / t1
@@ -127,7 +107,6 @@ def video_process(cap, frame_size, net, ln, encoder, tracker, movement_data_writ
 
 		# Record movement data
 		for movement in expired:
-
 			_record_movement_data(movement_data_writer, movement)
 		
 		# Check for restricted entry
@@ -259,17 +238,14 @@ def video_process(cap, frame_size, net, ln, encoder, tracker, movement_data_writ
 		# Record crowd data to file
 		if DATA_RECORD:
 			_record_crowd_data(record_time, len(humans_detected), len(violate_set), RE, ABNORMAL, crowd_data_writer)
-
+		
+		out.write(frame)
+		frame_filename = os.path.join('/images', f"frame_{frame_count:04d}.jpg")
+		cv2.imwrite(frame_filename, frame)
 		# Display video output or processing indicator
 		if SHOW_PROCESSING_OUTPUT:
+			# for the video
 			cv2.imshow("Processed Output", frame)
-			# Convert the image/frame to jpg
-			_, img_encoded = cv2.imencode('.jpg', frame)
-			headers = {'content-type': 'image/jpeg'}
-			response = requests.post('http://localhost:5000/video_feed', data=img_encoded.tobytes(), headers=headers)
-   
-
-
 		else:
 			progress(display_frame_count)
 
@@ -281,8 +257,6 @@ def video_process(cap, frame_size, net, ln, encoder, tracker, movement_data_writ
 			if not VID_FPS:
 				_calculate_FPS()
 			break
-		
-
-	
+	out.release()
 	cv2.destroyAllWindows()
 	return VID_FPS
